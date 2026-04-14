@@ -366,6 +366,8 @@
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
+    a.style.display = "none";
+    a.addEventListener("click", e => e.stopPropagation(), true);
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
@@ -484,11 +486,14 @@
         if (e.key === "Escape") finish(null);
       }
       overlay.addEventListener("click", e => {
-        if (e.target === overlay) finish(null);
+        e.stopPropagation();
+        if (e.target === overlay) { finish(null); return; }
         const btn = e.target.closest("[data-choice]");
-        if (btn) finish(btn.getAttribute("data-choice"));
+        if (btn) { finish(btn.getAttribute("data-choice")); return; }
         if (e.target.classList.contains("tp-extract-close")) finish(null);
-      });
+      }, true);
+      overlay.addEventListener("mousedown", e => e.stopPropagation(), true);
+      overlay.addEventListener("mouseup", e => e.stopPropagation(), true);
       document.addEventListener("keydown", onKey);
     });
   }
