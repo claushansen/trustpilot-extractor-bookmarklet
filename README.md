@@ -1,6 +1,6 @@
 # Trustpilot Review Extractor
 
-En bookmarklet der udtrækker anmeldelser fra en Trustpilot-virksomhedsside, bladrer automatisk gennem paginering og downloader resultatet som en JSON-fil.
+En bookmarklet der udtrækker anmeldelser fra en Trustpilot-virksomhedsside, bladrer automatisk gennem paginering, viser en loader undervejs og lader dig vælge mellem **Excel (CSV)** og **JSON** når den er færdig.
 
 ## Installer bookmarkleten
 
@@ -28,9 +28,14 @@ På den side kan du trække den grønne **⭐ Udtræk Trustpilot**-knap op i din
 1. Åbn en Trustpilot-virksomhedsside, fx `https://dk.trustpilot.com/review/eksempel.dk`.
 2. Rul ned indtil overskriften **"Alle anmeldelser"** er synlig på siden.
 3. Klik på bookmarkleten i din bogmærkelinje.
-4. Scriptet bladrer automatisk gennem op til 10 sider, samler alle anmeldelser og fjerner dubletter.
-5. Når det er færdigt, downloades en fil som `trustpilot-<domæne>-<tidsstempel>.json` automatisk.
-6. Forløbet kan følges i browserens DevTools-konsol (F12).
+4. En **loader** vises midt på siden og opdaterer teksten per side mens scriptet bladrer gennem op til 10 sider.
+5. Når udtrækningen er færdig, åbner en **modal** hvor du vælger format: **Excel (CSV)** eller **JSON**.
+6. Filen downloades som `trustpilot-<domæne>-<tidsstempel>.csv` eller `.json`.
+7. Forløbet kan også følges i browserens DevTools-konsol (F12).
+
+### Om Excel-filen
+
+CSV-filen bruger semikolon som separator og har en UTF-8 BOM, så dansk Excel åbner den direkte med korrekt Æ/Ø/Å og kolonner på plads. Kolonnerne er: `page`, `index`, `author`, `country`, `reviewCount`, `date`, `reviewDateTime`, `rating`, `verified`, `unsolicited`, `title`, `text`, `isAnswered`, `answerDateTime`, `answerTimeDays`.
 
 ## JSON-formatet
 

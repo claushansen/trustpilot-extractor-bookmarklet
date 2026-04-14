@@ -353,29 +353,6 @@
     return changed;
   }
 
-  const all = [];
-  let pageNumber = 1;
-
-  for (; pageNumber <= SETTINGS.maxPages; pageNumber++) {
-    const { cardsCount, reviews } = await scrapeCurrentPage(pageNumber);
-
-    console.log(`Side ${pageNumber}: fandt ${cardsCount} review-kort / ${reviews.length} reviews`);
-    all.push(...reviews);
-
-    const moved = await goToNextPage();
-    if (!moved) {
-      console.log("Ingen næste side fundet, eller siden ændrede sig ikke mere.");
-      break;
-    }
-  }
-
-  const deduped = dedupeReviews(all);
-
-  window.trustpilotAllReviews = deduped;
-
-  console.log(`Samlet antal reviews: ${deduped.length}`);
-  console.log(JSON.stringify(deduped, null, 2));
-
   function slugifyHost() {
     try {
       return location.hostname.replace(/^www\./, "").replace(/[^a-z0-9]+/gi, "-") || "trustpilot";
@@ -384,16 +361,7 @@
     }
   }
 
-  function downloadJson(data) {
-    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const filename = `trustpilot-${slugifyHost()}-${ts}.json`;
-    const payload = {
-      source: location.href,
-      extractedAt: new Date().toISOString(),
-      count: data.length,
-      reviews: data
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  function triggerDownload(blob, filename) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -407,5 +375,163 @@
     console.log(`Downloadet ${filename}`);
   }
 
-  downloadJson(deduped);
+  function timestamp() {
+    return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  }
+
+  function downloadJson(data) {
+    const filename = `trustpilot-${slugifyHost()}-${timestamp()}.json`;
+    const payload = {
+      source: location.href,
+      extractedAt: new Date().toISOString(),
+      count: data.length,
+      reviews: data
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    triggerDownload(blob, filename);
+  }
+
+  function csvEscape(val) {
+    if (val === null || val === undefined) return "";
+    const s = String(val);
+    if (/[";\n\r]/.test(s)) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  function toCsv(reviews) {
+    const columns = [
+      "page", "index", "author", "country", "reviewCount",
+      "date", "reviewDateTime", "rating", "verified", "unsolicited",
+      "title", "text", "isAnswered", "answerDateTime", "answerTimeDays"
+    ];
+    const header = columns.join(";");
+    const rows = reviews.map(r => columns.map(c => csvEscape(r[c])).join(";"));
+    return "\ufeff" + [header, ...rows].join("\r\n");
+  }
+
+  function downloadCsv(data) {
+    const filename = `trustpilot-${slugifyHost()}-${timestamp()}.csv`;
+    const blob = new Blob([toCsv(data)], { type: "text/csv;charset=utf-8" });
+    triggerDownload(blob, filename);
+  }
+
+  function injectStyles() {
+    if (document.getElementById("tp-extract-styles")) return;
+    const style = document.createElement("style");
+    style.id = "tp-extract-styles";
+    style.textContent = `
+      .tp-extract-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:2147483647;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#222}
+      .tp-extract-card{background:#fff;border-radius:10px;padding:1.5rem 1.75rem;min-width:280px;max-width:420px;box-shadow:0 10px 40px rgba(0,0,0,0.35);text-align:center}
+      .tp-extract-spinner{width:48px;height:48px;border:4px solid #e4e4e4;border-top-color:#00b67a;border-radius:50%;margin:0 auto 1rem;animation:tp-extract-spin 0.9s linear infinite}
+      @keyframes tp-extract-spin{to{transform:rotate(360deg)}}
+      .tp-extract-msg{font-size:15px;line-height:1.4;margin:0}
+      .tp-extract-title{font-size:18px;font-weight:600;margin:0 0 0.35rem}
+      .tp-extract-sub{font-size:13px;color:#666;margin:0 0 1.1rem}
+      .tp-extract-btn{display:block;width:100%;padding:0.7rem 1rem;margin-top:0.5rem;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;background:#00b67a;color:#fff}
+      .tp-extract-btn:hover{background:#009866}
+      .tp-extract-btn.secondary{background:#eee;color:#222}
+      .tp-extract-btn.secondary:hover{background:#dcdcdc}
+      .tp-extract-close{position:absolute;top:8px;right:12px;background:none;border:none;font-size:22px;cursor:pointer;color:#888;line-height:1}
+      .tp-extract-close:hover{color:#222}
+      .tp-extract-card{position:relative}
+    `;
+    document.head.appendChild(style);
+  }
+
+  function showLoader(message) {
+    injectStyles();
+    const overlay = document.createElement("div");
+    overlay.className = "tp-extract-overlay";
+    overlay.innerHTML = `
+      <div class="tp-extract-card">
+        <div class="tp-extract-spinner"></div>
+        <p class="tp-extract-msg"></p>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const msgEl = overlay.querySelector(".tp-extract-msg");
+    msgEl.textContent = message || "";
+    return {
+      update(m) { msgEl.textContent = m; },
+      hide() { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }
+    };
+  }
+
+  function showChoiceModal(count) {
+    injectStyles();
+    return new Promise(resolve => {
+      const overlay = document.createElement("div");
+      overlay.className = "tp-extract-overlay";
+      overlay.innerHTML = `
+        <div class="tp-extract-card">
+          <button class="tp-extract-close" aria-label="Luk">×</button>
+          <p class="tp-extract-title">Udtrækning færdig</p>
+          <p class="tp-extract-sub">${count} anmeldelser klar til download</p>
+          <button class="tp-extract-btn" data-choice="xlsx">Download som Excel (CSV)</button>
+          <button class="tp-extract-btn secondary" data-choice="json">Download som JSON</button>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      function finish(value) {
+        document.removeEventListener("keydown", onKey);
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        resolve(value);
+      }
+      function onKey(e) {
+        if (e.key === "Escape") finish(null);
+      }
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay) finish(null);
+        const btn = e.target.closest("[data-choice]");
+        if (btn) finish(btn.getAttribute("data-choice"));
+        if (e.target.classList.contains("tp-extract-close")) finish(null);
+      });
+      document.addEventListener("keydown", onKey);
+    });
+  }
+
+  const loader = showLoader("Starter udtrækning …");
+
+  try {
+    const all = [];
+    let pageNumber = 1;
+
+    for (; pageNumber <= SETTINGS.maxPages; pageNumber++) {
+      loader.update(`Henter side ${pageNumber} …`);
+      const { cardsCount, reviews } = await scrapeCurrentPage(pageNumber);
+
+      console.log(`Side ${pageNumber}: fandt ${cardsCount} review-kort / ${reviews.length} reviews`);
+      all.push(...reviews);
+      loader.update(`Side ${pageNumber}: ${reviews.length} anmeldelser fundet (i alt ${all.length})`);
+
+      const moved = await goToNextPage();
+      if (!moved) {
+        console.log("Ingen næste side fundet, eller siden ændrede sig ikke mere.");
+        break;
+      }
+    }
+
+    const deduped = dedupeReviews(all);
+    window.trustpilotAllReviews = deduped;
+    console.log(`Samlet antal reviews: ${deduped.length}`);
+
+    loader.hide();
+
+    if (!deduped.length) {
+      alert("Trustpilot extractor: Ingen anmeldelser fundet på siden.");
+      return;
+    }
+
+    const choice = await showChoiceModal(deduped.length);
+    if (choice === "xlsx") downloadCsv(deduped);
+    else if (choice === "json") downloadJson(deduped);
+    else console.log("Bruger annullerede download. Data ligger på window.trustpilotAllReviews.");
+  } catch (e) {
+    loader.hide();
+    console.error(e);
+    alert("Trustpilot extractor fejlede: " + (e && e.message ? e.message : e));
+  }
 })();
