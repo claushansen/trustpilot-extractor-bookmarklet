@@ -381,18 +381,6 @@
     return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   }
 
-  function downloadJson(data) {
-    const filename = `trustpilot-${slugifyHost()}-${timestamp()}.json`;
-    const payload = {
-      source: location.href,
-      extractedAt: new Date().toISOString(),
-      count: data.length,
-      reviews: data
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    triggerDownload(blob, filename);
-  }
-
   function csvEscape(val) {
     if (val === null || val === undefined) return "";
     const s = String(val);
@@ -461,43 +449,6 @@
     };
   }
 
-  function showChoiceModal(count) {
-    injectStyles();
-    return new Promise(resolve => {
-      const overlay = document.createElement("div");
-      overlay.className = "tp-extract-overlay";
-      overlay.innerHTML = `
-        <div class="tp-extract-card">
-          <button class="tp-extract-close" aria-label="Luk">×</button>
-          <p class="tp-extract-title">Udtrækning færdig</p>
-          <p class="tp-extract-sub">${count} anmeldelser klar til download</p>
-          <button class="tp-extract-btn" data-choice="xlsx">Download som Excel (CSV)</button>
-          <button class="tp-extract-btn secondary" data-choice="json">Download som JSON</button>
-        </div>
-      `;
-      document.body.appendChild(overlay);
-
-      function finish(value) {
-        document.removeEventListener("keydown", onKey);
-        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-        resolve(value);
-      }
-      function onKey(e) {
-        if (e.key === "Escape") finish(null);
-      }
-      overlay.addEventListener("click", e => {
-        e.stopPropagation();
-        if (e.target === overlay) { finish(null); return; }
-        const btn = e.target.closest("[data-choice]");
-        if (btn) { finish(btn.getAttribute("data-choice")); return; }
-        if (e.target.classList.contains("tp-extract-close")) finish(null);
-      }, true);
-      overlay.addEventListener("mousedown", e => e.stopPropagation(), true);
-      overlay.addEventListener("mouseup", e => e.stopPropagation(), true);
-      document.addEventListener("keydown", onKey);
-    });
-  }
-
   const loader = showLoader("Starter udtrækning …");
 
   try {
@@ -523,17 +474,15 @@
     window.trustpilotAllReviews = deduped;
     console.log(`Samlet antal reviews: ${deduped.length}`);
 
-    loader.hide();
-
     if (!deduped.length) {
+      loader.hide();
       alert("Trustpilot extractor: Ingen anmeldelser fundet på siden.");
       return;
     }
 
-    const choice = await showChoiceModal(deduped.length);
-    if (choice === "xlsx") downloadCsv(deduped);
-    else if (choice === "json") downloadJson(deduped);
-    else console.log("Bruger annullerede download. Data ligger på window.trustpilotAllReviews.");
+    loader.update(`Færdig – downloader ${deduped.length} anmeldelser som CSV …`);
+    downloadCsv(deduped);
+    setTimeout(() => loader.hide(), 800);
   } catch (e) {
     loader.hide();
     console.error(e);
